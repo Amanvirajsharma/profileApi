@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey, TIMESTAMP, CheckConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -324,7 +324,7 @@ def health_check(db: Session = Depends(get_db)):
     """Health check endpoint"""
     try:
         # Test database connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         return {
             "status": "healthy",
             "database": "connected"
@@ -357,8 +357,8 @@ def create_profile(user: UserProfileCreate, db: Session = Depends(get_db)):
 @app.get("/profiles/", response_model=List[UserProfileResponse], tags=["Profiles"])
 def get_all_profiles(
     user_type: Optional[UserType] = None,
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum records to return"),
     db: Session = Depends(get_db)
 ):
     """
@@ -424,8 +424,8 @@ def increment_test_count(user_id: int, db: Session = Depends(get_db)):
 
 @app.patch("/profiles/{user_id}/update-score", response_model=UserProfileResponse, tags=["Actions"])
 def update_user_score(
-    user_id: int, 
-    new_score: float = Field(..., ge=0, le=100), 
+    user_id: int,
+    new_score: float = Query(..., ge=0, le=100, description="New score between 0 and 100"),
     db: Session = Depends(get_db)
 ):
     """
