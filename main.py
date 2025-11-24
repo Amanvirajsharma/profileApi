@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI, Depends, HTTPException, status, Query
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey, TIMESTAMP, CheckConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, ForeignKey, TIMESTAMP, CheckConstraint, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from sqlalchemy.sql import func
@@ -9,40 +9,58 @@ from typing import Optional, List
 from enum import Enum
 from datetime import datetime
 
-# ============= DATABASE SETUP =============
+# ============= DATABASE CONFIGURATION =============
 
-# Get DATABASE_URL from environment variable (for Render)
-DATABASE_URL = os.getenv("DATABASE_URL")
+# YAHAN APNA DATABASE URL DAALO
+# Format: postgresql://username:password@host:port/database_name
 
-# Fallback for local development
-if not DATABASE_URL:
-    DATABASE_URL = "postgresql://postgres:Aman2506@localhost:5433/profile_db"
-    print("⚠️  Using local database")
-else:
-    print("✅ Using production database")
+# LOCAL DEVELOPMENT (Tumhara PC)
+LOCAL_DB_URL = "postgresql://postgres:Aman2506@localhost:5433/profile_db"
+# ☝️ YAHAN PASSWORD CHANGE KARO if needed
 
-# Fix Render's postgres:// to postgresql://
+# Get from environment (for Render production)
+DATABASE_URL = os.environ.get("DATABASE_URL", LOCAL_DB_URL)
+
+# Fix postgres:// to postgresql:// (Render compatibility)
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Create engine with connection pooling
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_recycle=300,
-)
+# Show connection info
+print("\n" + "="*70)
+if "localhost" in DATABASE_URL:
+    print("🏠 LOCAL MODE - Using your PostgreSQL")
+    print(f"📊 Database: localhost:5433/profile_db")
+else:
+    print("☁️  PRODUCTION MODE - Using Render PostgreSQL")
+    db_host = DATABASE_URL.split("@")[1].split("/")[0] if "@" in DATABASE_URL else "cloud"
+    print(f"📊 Database: {db_host}")
+print("="*70 + "\n")
 
-# Create session
+# Create engine
+try:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_size=5,
+        max_overflow=10,
+        echo=False  # Set True for SQL debug
+    )
+    print("✅ Database engine created")
+except Exception as e:
+    print(f"❌ Engine creation failed: {e}")
+    raise
+
+# Session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for models
+# Base class
 Base = declarative_base()
 
 
-# ============= DATABASE MODELS (Tables) =============
+# ============= DATABASE MODELS =============
 
 class User(Base):
-    """User table in database"""
     __tablename__ = "users"
     
     user_id = Column(Integer, primary_key=True, index=True)
@@ -57,19 +75,10 @@ class User(Base):
     created_at = Column(TIMESTAMP, server_default=func.now())
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
     
-    # Relationship with Education table
     education = relationship("Education", back_populates="user", cascade="all, delete-orphan")
-    
-    # Constraints
-    __table_args__ = (
-        CheckConstraint('score >= 0 AND score <= 100', name='check_score_range'),
-        CheckConstraint('test_count >= 0', name='check_test_count'),
-        CheckConstraint("user_type IN ('student', 'professor', 'teacher')", name='check_user_type'),
-    )
 
 
 class Education(Base):
-    """Education table in database"""
     __tablename__ = "education"
     
     education_id = Column(Integer, primary_key=True, index=True)
@@ -79,37 +88,37 @@ class Education(Base):
     year = Column(Integer, nullable=False)
     created_at = Column(TIMESTAMP, server_default=func.now())
     
-    # Relationship with User table
     user = relationship("User", back_populates="education")
 
 
-# Create all tables in database
-Base.metadata.create_all(bind=engine)
+# Create tables
+try:
+    Base.metadata.create_all(bind=engine)
+    print("✅ Database tables created/verified\n")
+except Exception as e:
+    print(f"❌ Table creation failed: {e}")
+    print("⚠️  Check if PostgreSQL is running and database exists\n")
 
 
-# ============= PYDANTIC SCHEMAS (API Models) =============
+# ============= PYDANTIC MODELS =============
 
 class UserType(str, Enum):
-    """User type options"""
     STUDENT = "student"
     PROFESSOR = "professor"
     TEACHER = "teacher"
 
 
 class EducationBase(BaseModel):
-    """Education base schema"""
-    degree: str = Field(..., example="Bachelor of Science", max_length=255)
-    institution: str = Field(..., example="MIT", max_length=255)
+    degree: str = Field(..., example="Bachelor of Science")
+    institution: str = Field(..., example="MIT")
     year: int = Field(..., example=2023, ge=1900, le=2100)
 
 
 class EducationCreate(EducationBase):
-    """Schema for creating education"""
     pass
 
 
 class EducationResponse(EducationBase):
-    """Schema for education response"""
     education_id: int
     user_id: int
     created_at: datetime
@@ -119,11 +128,10 @@ class EducationResponse(EducationBase):
 
 
 class UserProfileBase(BaseModel):
-    """User profile base schema"""
     name: str = Field(..., min_length=2, max_length=100, example="John Doe")
     email: EmailStr = Field(..., example="john@example.com")
     bio: Optional[str] = Field(None, max_length=500, example="A passionate learner")
-    location: Optional[str] = Field(None, max_length=255, example="New York, USA")
+    location: Optional[str] = Field(None, example="New York, USA")
     score: float = Field(default=0.0, ge=0, le=100, example=85.5)
     test_count: int = Field(default=0, ge=0, example=5)
     phone_no: Optional[str] = Field(None, max_length=20, example="+1234567890")
@@ -131,12 +139,10 @@ class UserProfileBase(BaseModel):
 
 
 class UserProfileCreate(UserProfileBase):
-    """Schema for creating user profile"""
     education: Optional[EducationCreate] = None
 
 
 class UserProfileUpdate(BaseModel):
-    """Schema for updating user profile"""
     name: Optional[str] = Field(None, min_length=2, max_length=100)
     email: Optional[EmailStr] = None
     bio: Optional[str] = Field(None, max_length=500)
@@ -149,7 +155,6 @@ class UserProfileUpdate(BaseModel):
 
 
 class UserProfileResponse(UserProfileBase):
-    """Schema for user profile response"""
     user_id: int
     created_at: datetime
     updated_at: datetime
@@ -162,7 +167,6 @@ class UserProfileResponse(UserProfileBase):
 # ============= DATABASE DEPENDENCY =============
 
 def get_db():
-    """Get database session"""
     db = SessionLocal()
     try:
         yield db
@@ -173,16 +177,10 @@ def get_db():
 # ============= CRUD FUNCTIONS =============
 
 def create_user_db(db: Session, user_data: UserProfileCreate):
-    """Create new user in database"""
-    # Check if email already exists
-    existing_user = db.query(User).filter(User.email == user_data.email).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
-        )
+    existing = db.query(User).filter(User.email == user_data.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Create user
     db_user = User(
         name=user_data.name,
         email=user_data.email,
@@ -197,15 +195,14 @@ def create_user_db(db: Session, user_data: UserProfileCreate):
     db.commit()
     db.refresh(db_user)
     
-    # Add education if provided
     if user_data.education:
-        db_education = Education(
+        edu = Education(
             user_id=db_user.user_id,
             degree=user_data.education.degree,
             institution=user_data.education.institution,
             year=user_data.education.year
         )
-        db.add(db_education)
+        db.add(edu)
         db.commit()
         db.refresh(db_user)
     
@@ -213,7 +210,6 @@ def create_user_db(db: Session, user_data: UserProfileCreate):
 
 
 def get_users_db(db: Session, user_type: str = None, skip: int = 0, limit: int = 100):
-    """Get all users from database"""
     query = db.query(User)
     if user_type:
         query = query.filter(User.user_type == user_type)
@@ -221,21 +217,15 @@ def get_users_db(db: Session, user_type: str = None, skip: int = 0, limit: int =
 
 
 def get_user_db(db: Session, user_id: int):
-    """Get single user by ID"""
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"User with ID {user_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
     return user
 
 
 def update_user_db(db: Session, user_id: int, user_data: UserProfileUpdate):
-    """Update user in database"""
     db_user = get_user_db(db, user_id)
     
-    # Update user fields
     update_data = user_data.model_dump(exclude_unset=True, exclude={'education'})
     
     for key, value in update_data.items():
@@ -244,18 +234,15 @@ def update_user_db(db: Session, user_id: int, user_data: UserProfileUpdate):
         elif value is not None:
             setattr(db_user, key, value)
     
-    # Update education if provided
     if user_data.education:
-        # Delete old education records
         db.query(Education).filter(Education.user_id == user_id).delete()
-        # Add new education
-        db_education = Education(
+        edu = Education(
             user_id=user_id,
             degree=user_data.education.degree,
             institution=user_data.education.institution,
             year=user_data.education.year
         )
-        db.add(db_education)
+        db.add(edu)
     
     db.commit()
     db.refresh(db_user)
@@ -263,15 +250,12 @@ def update_user_db(db: Session, user_id: int, user_data: UserProfileUpdate):
 
 
 def delete_user_db(db: Session, user_id: int):
-    """Delete user from database"""
     db_user = get_user_db(db, user_id)
     db.delete(db_user)
     db.commit()
-    return True
 
 
 def increment_test_db(db: Session, user_id: int):
-    """Increment test count for user"""
     db_user = get_user_db(db, user_id)
     db_user.test_count += 1
     db.commit()
@@ -280,12 +264,8 @@ def increment_test_db(db: Session, user_id: int):
 
 
 def update_score_db(db: Session, user_id: int, new_score: float):
-    """Update user score"""
-    if new_score < 0 or new_score > 100:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Score must be between 0 and 100"
-        )
+    if not 0 <= new_score <= 100:
+        raise HTTPException(status_code=400, detail="Score must be 0-100")
     
     db_user = get_user_db(db, user_id)
     db_user.score = new_score
@@ -294,156 +274,96 @@ def update_score_db(db: Session, user_id: int, new_score: float):
     return db_user
 
 
-# ============= FASTAPI APPLICATION =============
+# ============= FASTAPI APP =============
 
 app = FastAPI(
     title="Profile API",
-    description="Complete User Profile Management System with PostgreSQL",
+    description="User Profile Management System",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
 
-# ============= API ENDPOINTS =============
+# ============= ENDPOINTS =============
 
 @app.get("/", tags=["Root"])
 def root():
-    """Root endpoint - API info"""
     return {
-        "message": "✅ Profile API is running",
+        "status": "✅ Running",
+        "message": "Profile API is live!",
         "version": "2.0.0",
-        "database": "PostgreSQL",
-        "docs": "/docs",
-        "redoc": "/redoc"
+        "docs": "/docs"
     }
 
 
 @app.get("/health", tags=["Health"])
 def health_check(db: Session = Depends(get_db)):
-    """Health check endpoint"""
     try:
-        # Test database connection
-        db.query(User).first()
+        db.execute(text("SELECT 1"))
+        user_count = db.query(User).count()
         return {
             "status": "healthy",
-            "database": "connected"
+            "database": "connected",
+            "total_users": user_count
         }
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database connection failed: {str(e)}"
-        )
+        raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
 
 
-@app.post("/profiles/", response_model=UserProfileResponse, status_code=status.HTTP_201_CREATED, tags=["Profiles"])
+@app.post("/profiles/", response_model=UserProfileResponse, status_code=201, tags=["Profiles"])
 def create_profile(user: UserProfileCreate, db: Session = Depends(get_db)):
-    """
-    Create a new user profile
-    
-    - **name**: User's full name (required)
-    - **email**: Valid email address (required)
-    - **user_type**: student, professor, or teacher (required)
-    - **bio**: Short biography (optional)
-    - **location**: User's location (optional)
-    - **score**: Score between 0-100 (default: 0)
-    - **test_count**: Number of tests taken (default: 0)
-    - **phone_no**: Contact number (optional)
-    - **education**: Education details (optional)
-    """
+    """Create new user profile"""
     return create_user_db(db, user)
 
 
 @app.get("/profiles/", response_model=List[UserProfileResponse], tags=["Profiles"])
 def get_all_profiles(
     user_type: Optional[UserType] = None,
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum records to return"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
     db: Session = Depends(get_db)
 ):
-    """
-    Get all user profiles
-    
-    - **user_type**: Filter by user type (optional)
-    - **skip**: Number of records to skip (pagination)
-    - **limit**: Maximum number of records to return
-    """
-    return get_users_db(
-        db, 
-        user_type=user_type.value if user_type else None, 
-        skip=skip, 
-        limit=limit
-    )
+    """Get all user profiles"""
+    return get_users_db(db, user_type=user_type.value if user_type else None, skip=skip, limit=limit)
 
 
 @app.get("/profiles/{user_id}", response_model=UserProfileResponse, tags=["Profiles"])
 def get_profile(user_id: int, db: Session = Depends(get_db)):
-    """
-    Get a specific user profile by ID
-    
-    - **user_id**: The ID of the user to retrieve
-    """
+    """Get specific user profile"""
     return get_user_db(db, user_id)
 
 
 @app.put("/profiles/{user_id}", response_model=UserProfileResponse, tags=["Profiles"])
-def update_profile(
-    user_id: int, 
-    user: UserProfileUpdate, 
-    db: Session = Depends(get_db)
-):
-    """
-    Update an existing user profile
-    
-    - **user_id**: The ID of the user to update
-    - All fields are optional - only provided fields will be updated
-    """
+def update_profile(user_id: int, user: UserProfileUpdate, db: Session = Depends(get_db)):
+    """Update user profile"""
     return update_user_db(db, user_id, user)
 
 
-@app.delete("/profiles/{user_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Profiles"])
+@app.delete("/profiles/{user_id}", status_code=204, tags=["Profiles"])
 def delete_profile(user_id: int, db: Session = Depends(get_db)):
-    """
-    Delete a user profile
-    
-    - **user_id**: The ID of the user to delete
-    """
+    """Delete user profile"""
     delete_user_db(db, user_id)
     return None
 
 
 @app.patch("/profiles/{user_id}/increment-test", response_model=UserProfileResponse, tags=["Actions"])
-def increment_test_count(user_id: int, db: Session = Depends(get_db)):
-    """
-    Increment the test count for a user
-    
-    - **user_id**: The ID of the user
-    """
+def increment_test(user_id: int, db: Session = Depends(get_db)):
+    """Increment test count"""
     return increment_test_db(db, user_id)
 
 
 @app.patch("/profiles/{user_id}/update-score", response_model=UserProfileResponse, tags=["Actions"])
-def update_user_score(
+def update_score(
     user_id: int,
-    new_score: float = Query(..., ge=0, le=100, description="New score between 0 and 100"),
+    new_score: float = Query(..., ge=0, le=100),
     db: Session = Depends(get_db)
 ):
-    """
-    Update a user's score
-    
-    - **user_id**: The ID of the user
-    - **new_score**: New score value (0-100)
-    """
+    """Update user score"""
     return update_score_db(db, user_id, new_score)
 
 
-# ============= STARTUP EVENT =============
-
 @app.on_event("startup")
-async def startup_event():
-    """Run on application startup"""
-    print("=" * 50)
-    print("🚀 Profile API Started Successfully!")
-    print(f"📊 Database: {DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else 'Local'}")
-    print(f"📚 Docs: http://localhost:8000/docs")
-    print("=" * 50)
+async def startup():
+    print("🚀 FastAPI Server Started!")
+    print("📚 Documentation: http://127.0.0.1:8000/docs\n")

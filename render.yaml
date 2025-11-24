@@ -1,24 +1,20 @@
 services:
   - type: web
     name: profile-api
-    env: python
     runtime: python
     region: oregon
     plan: free
     branch: main
-    buildCommand: |
-      pip install --upgrade pip setuptools wheel
-      pip install --no-cache-dir -r requirements.txt
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: DATABASE_URL
         fromDatabase:
           name: profile-db
           property: connectionString
-      - key: PORT
-        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.11.7
 
 databases:
   - name: profile-db

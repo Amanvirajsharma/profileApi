@@ -1,22 +1,15 @@
-# Profile API - User Management System
+# Profile API - PostgreSQL Backend
 
-Complete REST API for managing user profiles with PostgreSQL database.
+Complete REST API for user profile management.
 
-## Features
-
-- ✅ User Profile Management (CRUD)
-- ✅ Education Information
-- ✅ Score & Test Tracking
-- ✅ User Type Classification (Student/Professor/Teacher)
-- ✅ PostgreSQL Database
-- ✅ Auto-generated API Documentation
-- ✅ Data Validation
-
-## Installation
+## 🚀 Quick Start
 
 ### Local Development
 
-1. **Clone the repository**
+1. **Clone & Setup**
 ```bash
-git clone <your-repo-url>
+git clone <your-repo>
 cd profile_api
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
