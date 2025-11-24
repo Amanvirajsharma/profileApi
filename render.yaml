@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: profile-api
+    env: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DATABASE_URL
+        fromDatabase:
+          name: profile-db
+          property: connectionString
+
+databases:
+  - name: profile-db
+    databaseName: profile_db
+    user: profile_user
+    region: oregon
+    plan: free
