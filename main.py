@@ -324,7 +324,7 @@ def health_check(db: Session = Depends(get_db)):
     """Health check endpoint"""
     try:
         # Test database connection
-        db.execute(text("SELECT 1"))
+        db.query(User).first()
         return {
             "status": "healthy",
             "database": "connected"

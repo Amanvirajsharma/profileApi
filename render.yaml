@@ -2,10 +2,13 @@ services:
   - type: web
     name: profile-api
     env: python
+    runtime: python
     region: oregon
     plan: free
     branch: main
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    buildCommand: |
+      pip install --upgrade pip setuptools wheel
+      pip install --no-cache-dir -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
@@ -14,6 +17,8 @@ services:
         fromDatabase:
           name: profile-db
           property: connectionString
+      - key: PORT
+        value: 10000
 
 databases:
   - name: profile-db
